@@ -1,35 +1,39 @@
 import { Request, Response } from 'express';
 import { User } from '../models/User';
 import nodemailer, { SendMailOptions } from 'nodemailer';
-
-export const ping = (req: Request, res: Response) => {
-    res.json({ pong: true });
-}
+import { Jwt } from 'jsonwebtoken';
+const bcrypt = require('bcrypt');
 
 export const register = async (req: Request, res: Response) => {
 
     const { email, password, name, discipline } = req.body;
 
     if (email && password && name && discipline) {
+            try {
+                let hasUser = await User.findOne({where: {email}});
 
-        let hasUser = await User.findOne({ where: { email } });
-        if (!hasUser) {
-            let newUser = await User.create({ email, password, name, discipline });
+                if (!hasUser) {
+                    const saltRounds = 10;
+                    const hashedPassword = await bcrypt.hash(password, saltRounds);
+                
+                    let newUser = await User.create({
+                        email,
+                        password: hashedPassword,
+                        name,
+                        discipline
+                    });
+                    res.status(201).json({message: 'Usuário cadastrado com sucesso.', newUser});
+                }
+            } catch (error){
+                console.error('Erro ao cadastrar usuário:', error);
+                res.status(500).json({error: 'Erro interno ao processar o registro.'});
+            }
 
-            res.status(201);
-            return res.json({
-                message: "Usuário cadastradado com sucesso.",
-                newUser
-
-
-            });
         } else {
-            return res.json({ error: 'E-mail já existe.' });
+            res.status(400).json({ error: 'E-mail, senha, nome e/ou disciplina não fornecidos' });
         }
     }
 
-    return res.json({ error: 'E-mail e/ou senha não enviados.' });;
-}
 
 export const login = async (req: Request, res: Response) => {
     if (req.body.email && req.body.password) {
@@ -62,18 +66,19 @@ export const listAll = async (req: Request, res: Response) => {
 export const forgotPassword = async (req: Request, res: Response) => {
     const { email } = req.params;
 
-    if (!email) {
-        return res.json({ error: 'E-mail não fornecido.' });
-    }
-
     try {
-        const user = await User.findOne({ where: { email } });
+        const hasUser = await User.findOne({ where: { email } });
 
-        if (!user) {
-            return res.json({ error: 'Usuário não encontrado.' });
+        if (!hasUser) {
+            return res.status(404).json({ error: 'Usuário não encontrado.' });
         }
+        const randomPassword = Math.random().toString(36).slice(-8);
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(randomPassword, saltRounds);
 
-        // Configuração do transporte de e-mail usando Nodemailer
+        hasUser.password = hashedPassword;
+        await hasUser.save();
+    
         const transporter = nodemailer.createTransport({
             host: 'sandbox.smtp.mailtrap.io',
             port: 2525,
@@ -83,26 +88,25 @@ export const forgotPassword = async (req: Request, res: Response) => {
             },
         });
 
-        // Montando as opções do e-mail
         const mailOptions = {
             from: 'seu-email@dominio.com',
-            to: user.email,
+            to: email,
             subject: 'Recuperação de senha',
-            text: `Sua senha é: ${user.password}`, // Enviando a senha do usuário
+            text: `Sua nova senha é: ${randomPassword}`, 
         };
-
-        // Enviando o e-mail
+        
         transporter.sendMail(mailOptions, (error, info) => {
             if (error) {
                 console.error('Erro ao enviar o e-mail:', error);
-                return res.json({ error: 'Ocorreu um erro ao enviar o e-mail.' });
+                res.status(500).json({ error: 'Erro ao enviar e-mail de recuperação de senha.' });
             } else {
                 console.log('E-mail enviado:', info.response);
-                return res.json({ message: 'Senha enviada por e-mail.' });
+                res.status(200).json({ message: 'Nova senha enviada para o seu e-mail.' });
             }
         });
+    
     } catch (error) {
-        console.error(error);
-        return res.json({ error: 'Ocorreu um erro ao processar a solicitação.' });
-    }
-};
+        console.error('Erro ao recuperar a sennha:', error);
+        res.status(500).json({ error: 'Erro interno ao processar a recuperação de senha.' });
+    } 
+}
