@@ -4,63 +4,80 @@ import nodemailer, { SendMailOptions } from 'nodemailer';
 import { Jwt } from 'jsonwebtoken';
 const bcrypt = require('bcrypt');
 
+const generateRandomPassword = (length = 8) => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        const randomIndex = Math.floor(Math.random() * characters.length);
+        password += characters[randomIndex];
+    }
+    return password;
+};
+
 export const register = async (req: Request, res: Response) => {
 
     const { email, password, name, discipline } = req.body;
 
     if (email && password && name && discipline) {
-            try {
-                let hasUser = await User.findOne({where: {email}});
+        try {
+            let hasUser = await User.findOne({ where: { email } });
 
-                if (!hasUser) {
-                    const saltRounds = 10;
-                    const hashedPassword = await bcrypt.hash(password, saltRounds);
+            if (!hasUser) {
+
+                const saltRounds = 10;
+                const hashedPassword = await bcrypt.hash(password, saltRounds);
                 
-                    let newUser = await User.create({
-                        email,
-                        password: hashedPassword,
-                        name,
-                        discipline
-                    });
-                    res.status(201).json({message: 'Usuário cadastrado com sucesso.', newUser});
-                }
-            } catch (error){
-                console.error('Erro ao cadastrar usuário:', error);
-                res.status(500).json({error: 'Erro interno ao processar o registro.'});
+                let newUser = await User.create({
+                    email,
+                    password: hashedPassword,
+                    name,
+                    discipline
+                });
+
+                res.status(201).json({ message: 'Usuário cadastrado com sucesso.', newUser });
+            } else {
+
+                res.status(400).json({ error: 'Usuário já existe.' });
             }
+        } catch (error) {
+            console.error('Erro ao cadastrar usuário:', error);
+            res.status(500).json({ error: 'Erro interno ao processar o registro.' });
+        }
+    } else {
+        res.status(400).json({ error: 'E-mail, senha, nome e/ou disciplina não fornecidos' });
+    }
+};
 
+    export const login = async (req: Request, res: Response) => {
+        const { email, password } = req.body;
+    
+        if (email && password) {
+            try {
+                let user = await User.findOne({ where: { email } });
+    
+                if (user && await bcrypt.compare(password, user.password)) {
+                    res.json({ status: true });
+                } else {
+                    res.status(401).json({ status: false, error: 'Credenciais inválidas.' });
+                }
+            } catch (error) {
+                console.error('Erro ao fazer login:', error);
+                res.status(500).json({ error: 'Erro interno ao processar o login.' });
+            }
         } else {
-            res.status(400).json({ error: 'E-mail, senha, nome e/ou disciplina não fornecidos' });
+            res.status(400).json({ error: 'E-mail e senha não fornecidos.' });
         }
-    }
-
-
-export const login = async (req: Request, res: Response) => {
-    if (req.body.email && req.body.password) {
-        let email: string = req.body.email;
-        let password: string = req.body.password;
-
-        let user = await User.findOne({
-            where: { email, password }
-        });
-
-        if (user) {
-            res.json({ status: true });
-            return;
-        }
-    }
-
-    res.json({ status: false });
-}
-
-
-
+    };
 
 export const listAll = async (req: Request, res: Response) => {
-    let users = await User.findAll();
-
-    res.json({ users });
-}
+    try {
+        let users = await User.findAll();
+        res.json({ users });
+    } catch (error) {
+        console.error('Erro ao listar usuários:', error);
+        res.status(500).json({ error: 'Erro interno ao listar usuários.' });
+    }
+};
 
 
 export const forgotPassword = async (req: Request, res: Response) => {
